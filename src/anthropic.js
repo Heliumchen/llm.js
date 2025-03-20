@@ -26,9 +26,10 @@ export default async function Anthropic(messages, options = {}) {
     }
 
     let system = null;
-    if (messages.length > 1 && messages[0].role == "system") {
+    if (messages.length > 0 && messages[0].role == "system") {
         system = messages.shift().content;
     }
+    if (!messages || messages.length === 0) { throw new Error("At least one message is required (except for system messages)") }
 
     const anthropicOptions = {
         messages,
@@ -67,6 +68,7 @@ export default async function Anthropic(messages, options = {}) {
             "anthropic-version": options.anthropicVersion || "2023-06-01",
             "Content-Type": "application/json",
             "x-api-key": apiKey,
+            "anthropic-dangerous-direct-browser-access": "true",
         },
         body: JSON.stringify(anthropicOptions),
         signal: signal.signal,
@@ -83,45 +85,65 @@ export default async function Anthropic(messages, options = {}) {
 }
 
 Anthropic.parseStream = async function* (response) {
+    // Use TextDecoder to decode the text stream
+    const decoder = new TextDecoder();
     let buffer = '';
     
     for await (const chunk of response) {
-        buffer += chunk.toString();
+        // Convert binary data to text
+        const text = typeof chunk === 'string' ? chunk : decoder.decode(chunk, { stream: true });
+        buffer += text;
         
-        // Split buffer into lines, keeping any incomplete line in the buffer
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || ''; // Keep last partial line in buffer
+        // Properly handle SSE format (event: ... and data: ... format)
+        const messages = buffer.split(/\r?\n\r?\n/);
+        buffer = messages.pop() || '';
         
-        for (const line of lines) {
-            if (!line || !line.startsWith('data:')) continue;
+        for (const message of messages) {
+            const lines = message.split(/\r?\n/);
+            let dataLine = '';
             
-            try {
-                const json = JSON.parse(line.substring(6));
-                if (json.type !== "content_block_delta") continue;
-                if (json.delta.type !== "text_delta") continue;
-                yield json.delta.text;
-            } catch (e) {
-                // If JSON parsing fails, add back to buffer
-                buffer = line + '\n' + buffer;
-                continue;
+            // Find the line starting with data:
+            for (const line of lines) {
+                if (line.startsWith('data:')) {
+                    dataLine = line.substring(5).trim();
+                    break;
+                }
+            }
+            
+            if (dataLine) {
+                try {
+                    const json = JSON.parse(dataLine);
+                    
+                    if (json.type === "content_block_delta" && 
+                        json.delta && 
+                        json.delta.type === "text_delta" && 
+                        json.delta.text) {
+                        yield json.delta.text;
+                    }
+                } catch (e) {
+                    continue;
+                }
             }
         }
     }
     
-    // Process any remaining complete messages in buffer
+    // Process any remaining data
     if (buffer) {
-        const lines = buffer.split('\n');
+        const lines = buffer.split(/\r?\n/);
+        
         for (const line of lines) {
-            if (!line || !line.startsWith('data:')) continue;
-            
-            try {
-                const json = JSON.parse(line.substring(6));
-                if (json.type !== "content_block_delta") continue;
-                if (json.delta.type !== "text_delta") continue;
-                yield json.delta.text;
-            } catch (e) {
-                // Ignore parsing errors in final buffer flush
-                continue;
+            if (line.startsWith('data:')) {
+                try {
+                    const json = JSON.parse(line.substring(5).trim());
+                    if (json.type === "content_block_delta" && 
+                        json.delta && 
+                        json.delta.type === "text_delta" && 
+                        json.delta.text) {
+                        yield json.delta.text;
+                    }
+                } catch (e) {
+                    continue;
+                }
             }
         }
     }
