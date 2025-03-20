@@ -6,7 +6,7 @@ import OpenAI from "./openai.js";
 import Anthropic from "./anthropic.js";
 import Mistral from "./mistral.js";
 import Google from "./google.js";
-import Ollama from "./ollama.js";
+// import Ollama from "./ollama.js";
 import Groq from "./groq.js";
 import Together from "./together.js";
 import Perplexity from "./perplexity.js";
@@ -88,9 +88,9 @@ LLM.prototype.send = async function (opts = {}) {
         case GOOGLE:
             response = await Google(this.messages, options, this);
             break;
-        case OLLAMA:
-            response = await Ollama(this.messages, options, this);
-            break;
+        // case OLLAMA:
+        //     response = await Ollama(this.messages, options, this);
+        //     break;
         case GROQ:
             response = await Groq(this.messages, options, this);
             break;
@@ -192,8 +192,8 @@ LLM.modelForService = function (service) {
         return Mistral.defaultModel;
     } else if (service === GOOGLE) {
         return Google.defaultModel;
-    } else if (service === OLLAMA) {
-        return Ollama.defaultModel;
+    // } else if (service === OLLAMA) {
+    //     return Ollama.defaultModel;
     } else if (service === GROQ) {
         return Groq.defaultModel;
     } else if (service === TOGETHER) {
